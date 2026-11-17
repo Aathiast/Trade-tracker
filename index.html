@@ -1,0 +1,1591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Tracker</title>
+<meta name="description" content="Track your stock trades week by week.">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#eceef2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e1115" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: ledger header (initial vs current), year tabs, a month-by-week heat grid, then the selected week's trade table. */
+:root {
+  --bg: #eceef2;
+  --surface: #ffffff;
+  --ink: #14171c;
+  --muted: #5b6370;
+  --line: #d6dbe2;
+  --accent: #2443c4;
+  --gain: #11804a;
+  --loss: #c4372e;
+  --font-display: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1115;
+    --surface: #171b21;
+    --ink: #e7eaee;
+    --muted: #9aa2ad;
+    --line: #2b313a;
+    --accent: #8ea3ff;
+    --gain: #3fcf83;
+    --loss: #ff6e62;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1115;
+  --surface: #171b21;
+  --ink: #e7eaee;
+  --muted: #9aa2ad;
+  --line: #2b313a;
+  --accent: #8ea3ff;
+  --gain: #3fcf83;
+  --loss: #ff6e62;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 20px 16px 96px;
+  display: grid;
+  gap: 18px;
+}
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.gain { color: var(--gain); }
+.loss { color: var(--loss); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Header */
+.top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+h1 {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { border-color: var(--muted); }
+.btn.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
+}
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.danger { color: var(--loss); }
+.btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+.btn[hidden] { display: none; }
+
+/* Stats */
+.stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.stat {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+.stat label, .stat .label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+.stat .big {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(20px, 5.4vw, 28px);
+  font-weight: 600;
+  line-height: 1.2;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+.stat .sub { font-size: 13px; margin-top: 2px; }
+.initial-row { display: flex; align-items: baseline; gap: 2px; margin-top: 4px; }
+.initial-row span { font-family: var(--font-num); font-size: clamp(20px, 5.4vw, 28px); font-weight: 600; color: var(--muted); }
+#initial {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  border-bottom: 1px dashed var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(20px, 5.4vw, 28px);
+  font-weight: 600;
+  padding: 0;
+  border-radius: 0;
+}
+#initial:focus { outline: none; border-bottom: 2px solid var(--accent); }
+#initial[readonly] { border-bottom-color: transparent; }
+.stat .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.stat .hint:empty { display: none; }
+.from { display: grid; gap: 2px; margin-top: 8px; }
+.from label { font-size: 11px; font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.from input {
+  font-family: var(--font-num);
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--ink);
+  padding: 4px 6px;
+  min-width: 0;
+  max-width: 100%;
+  width: 100%;
+}
+.from input[readonly] { background: transparent; border-color: transparent; padding-left: 0; }
+.wk .st {
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+.banner label.inline { font-size: 13px; color: var(--muted); }
+
+/* Banner */
+.banner {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 10px;
+}
+.banner p { margin: 0; }
+.banner .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.banner input {
+  font-family: var(--font-num);
+  font-size: 15px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  width: 160px;
+}
+.banner.flash { animation: flash 0.9s ease; }
+@keyframes flash { 0%, 100% { box-shadow: none; } 30% { box-shadow: 0 0 0 3px var(--accent); } }
+.banner.quiet { border-left-color: var(--muted); font-size: 13px; color: var(--muted); padding: 8px 12px; }
+
+/* Years */
+.years {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.year {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  display: grid;
+  gap: 0;
+}
+.year b { font-family: var(--font-display); font-size: 16px; font-weight: 700; }
+.year small { font-family: var(--font-num); font-size: 12px; color: var(--muted); }
+.year[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* Grid */
+.board {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+.board-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.board-head h2 { font-family: var(--font-display); font-size: 17px; margin: 0; font-weight: 700; }
+.board-head .yr-sum { font-size: 13px; color: var(--muted); }
+.months {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 8px 22px;
+}
+.month { display: grid; grid-template-columns: 34px repeat(5, 1fr); gap: 5px; align-items: stretch; }
+.month .m {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  align-self: center;
+}
+.wk {
+  position: relative;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  font-weight: 600;
+  min-width: 0;
+}
+.wk .d {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.wk.up { background: color-mix(in srgb, var(--gain) var(--t, 20%), var(--surface)); border-color: color-mix(in srgb, var(--gain) 45%, var(--line)); }
+.wk.down { background: color-mix(in srgb, var(--loss) var(--t, 20%), var(--surface)); border-color: color-mix(in srgb, var(--loss) 45%, var(--line)); }
+.wk.flat { background: var(--surface); }
+.wk.future { background: transparent; border-style: dashed; }
+.wk.future .d { opacity: 0.8; }
+.chart-empty { color: var(--muted); font-size: 14px; padding: 48px 8px; text-align: center; margin: 0; }
+.wk.now::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  width: 14px;
+  height: 2px;
+  margin-left: -7px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.wk .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.wk[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; z-index: 1; }
+.wk.blank { visibility: hidden; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--muted); }
+.legend .sw { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--line); }
+.legend .i-up { background: color-mix(in srgb, var(--gain) 45%, var(--surface)); }
+.legend .i-down { background: color-mix(in srgb, var(--loss) 45%, var(--surface)); }
+.legend .i-open { background: var(--surface); position: relative; }
+.legend .i-open::after { content: ""; position: absolute; inset: 3px; border-radius: 50%; background: var(--accent); }
+
+/* Balance chart */
+.chartcard {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 14px 8px;
+  display: grid;
+  gap: 8px;
+}
+.chart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
+.chart-head h2 { font-family: var(--font-display); font-size: 17px; margin: 0; font-weight: 700; }
+.readout { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.readout b { color: var(--ink); font-size: 15px; font-weight: 600; margin-right: 6px; }
+.readout .rc { display: block; font-size: 12px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button {
+  border: none;
+  background: transparent;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--muted);
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--surface); }
+.chart { width: 100%; min-height: 190px; }
+.chart svg { display: block; width: 100%; touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+.chart text { fill: var(--muted); font-family: var(--font-num); font-size: 10px; }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .base { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; opacity: 0.8; }
+.chart .line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.chart .area-top { stop-color: var(--accent); stop-opacity: 0.22; }
+.chart .area-bot { stop-color: var(--accent); stop-opacity: 0.02; }
+.chart .ev-up { fill: var(--gain); }
+.chart .ev-down { fill: var(--loss); }
+.chart .end { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.chart .cursor { stroke: var(--ink); stroke-width: 1; opacity: 0.5; }
+.chart .cdot { fill: var(--surface); stroke: var(--ink); stroke-width: 2; }
+
+/* Week panel */
+.week {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.week-head {
+  padding: 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid var(--line);
+}
+.week-head h2 { font-family: var(--font-display); font-size: 17px; margin: 0; font-weight: 700; }
+.week-head .wsum { font-size: 13px; color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+td { padding: 10px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+th.r, td.r { text-align: right; }
+tbody tr { cursor: pointer; }
+tbody tr:hover td { background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+tbody tr.ro { cursor: default; }
+tbody tr.ro:hover td { background: transparent; }
+td.sym { font-weight: 700; letter-spacing: 0.02em; }
+td .sm { display: block; font-size: 11.5px; color: var(--muted); }
+.endbtn {
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.endbtn:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+.tag {
+  display: inline-block;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.empty { padding: 22px 14px; color: var(--muted); display: grid; gap: 10px; justify-items: start; }
+.empty p { margin: 0; }
+
+/* Sheet (modal) */
+.scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 12, 16, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 50;
+  padding: 0;
+}
+.scrim[hidden] { display: none; }
+.sheet {
+  background: var(--surface);
+  color: var(--ink);
+  width: 100%;
+  max-width: 520px;
+  max-height: 92%;
+  overflow-y: auto;
+  border-radius: 16px 16px 0 0;
+  padding: 18px 16px 20px;
+  display: grid;
+  gap: 14px;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.25);
+}
+@media (min-width: 640px) {
+  .scrim { align-items: center; padding: 16px; }
+  .sheet { border-radius: 16px; }
+}
+.sheet h3 { font-family: var(--font-display); font-size: 18px; margin: 0; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field.full { grid-column: 1 / -1; }
+.field label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.field input {
+  font-family: var(--font-num);
+  font-size: 16px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+  width: 100%;
+  min-width: 0;
+}
+.field input#f-symbol { text-transform: uppercase; font-weight: 600; }
+.field .help, .fields > .help { font-size: 12px; color: var(--muted); margin: 0; }
+.field.bad input { border-color: var(--loss); }
+.preview {
+  background: var(--bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.err { color: var(--loss); font-size: 13px; margin: 0; min-height: 1em; }
+.actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.actions .spacer { flex: 1; }
+
+/* Data / backup */
+.data {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  font-size: 14px;
+  justify-items: start;
+}
+.data p { margin: 0; }
+.data .row { display: flex; gap: 8px; flex-wrap: wrap; }
+.data .note { font-size: 13px; color: var(--muted); }
+.data .note:empty { display: none; }
+
+/* Toast */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--surface);
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 14px;
+  z-index: 60;
+  max-width: calc(100% - 32px);
+}
+.toast[hidden] { display: none; }
+
+/* Floating trade button on phones */
+.fab { position: fixed; right: 16px; bottom: 18px; z-index: 40; box-shadow: 0 6px 18px rgba(0,0,0,0.22); padding: 12px 18px; }
+@media (min-width: 700px) { .fab { display: none; } }
+@media (max-width: 699px) { #add-top { display: none; } }
+
+.loading .wk, .loading .stat .big { opacity: 0.5; }
+
+.narrow { display: none; }
+.dl { display: block; }
+td.narrow .dl + .dl::before { content: "→ "; color: var(--muted); }
+@media (max-width: 520px) {
+  .wide { display: none; }
+  .narrow { display: table-cell; }
+  table { font-size: 13px; }
+  td, th { padding-left: 6px; padding-right: 6px; }
+  td:first-child, th:first-child { padding-left: 12px; }
+  td:last-child, th:last-child { padding-right: 12px; }
+  th { font-size: 10px; letter-spacing: 0.04em; }
+}
+@media (max-width: 400px) {
+  .month { grid-template-columns: 30px repeat(5, 1fr); gap: 4px; }
+  .wk { font-size: 10.5px; height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .banner.flash { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <header class="top">
+    <h1>Stock Trading Tracker</h1>
+    <button class="btn primary" id="add-top" type="button">+ Trade</button>
+  </header>
+
+  <section class="stats" aria-label="Summary">
+    <div class="stat">
+      <label for="initial">Initial invest</label>
+      <div class="initial-row"><span>$</span><input id="initial" type="number" inputmode="decimal" step="0.01" min="0" value=""></div>
+      <div class="hint" id="initial-hint"></div>
+      <div class="from"><label for="start-date">Starts week of</label><input id="start-date" type="date"></div>
+    </div>
+    <div class="stat">
+      <span class="label">Current balance</span>
+      <div class="big" id="balance">—</div>
+      <div class="sub num" id="total-change">&nbsp;</div>
+    </div>
+  </section>
+
+  <div id="banner"></div>
+
+  <nav class="years" id="years" aria-label="Years"></nav>
+
+  <section class="chartcard" aria-labelledby="chart-title">
+    <div class="chart-head">
+      <div>
+        <h2 id="chart-title">Balance over time</h2>
+        <div class="readout num" id="readout">&nbsp;</div>
+      </div>
+      <div class="seg" role="group" aria-label="Chart range">
+        <button type="button" id="rng-year" aria-pressed="true">2026</button>
+        <button type="button" id="rng-all" aria-pressed="false">All time</button>
+      </div>
+    </div>
+    <div class="chart" id="chart"></div>
+  </section>
+
+  <section class="board" aria-labelledby="board-title">
+    <div class="board-head">
+      <h2 id="board-title">2026</h2>
+      <span class="yr-sum num" id="year-sum"></span>
+    </div>
+    <div class="months" id="months"></div>
+    <div class="legend">
+      <span>Each box is one week; a trade counts in the week it closed</span>
+      <span class="sw"><i class="i-up"></i>Gain</span>
+      <span class="sw"><i class="i-down"></i>Loss</span>
+      <span class="sw"><i class="i-open"></i>Open trade only</span>
+    </div>
+  </section>
+
+  <section class="week" id="week" aria-live="polite"></section>
+
+  <footer class="data" aria-label="Your data">
+    <p><strong>Your trades are saved on this phone only.</strong> Back them up now and then, and before you change phones.</p>
+    <div class="row">
+      <button class="btn" id="backup-btn" type="button">Back up trades</button>
+      <button class="btn" id="restore-btn" type="button">Restore from backup</button>
+      <input id="restore-file" type="file" accept="application/json,.json" hidden>
+    </div>
+    <p class="note" id="restore-note"></p>
+    <button class="btn danger" id="restore-confirm" type="button" hidden></button>
+  </footer>
+</div>
+
+<button class="btn primary fab" id="add-fab" type="button">+ Trade</button>
+
+<div class="scrim" id="scrim" hidden>
+  <form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="form-title" novalidate>
+    <h3 id="form-title">New trade</h3>
+    <div class="fields">
+      <div class="field">
+        <label for="f-symbol">Symbol</label>
+        <input id="f-symbol" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="12" placeholder="AAPL">
+      </div>
+      <div class="field">
+        <label for="f-shares">Shares</label>
+        <input id="f-shares" type="number" inputmode="decimal" step="any" min="0" placeholder="10">
+      </div>
+      <div class="field">
+        <label for="f-open">Open date</label>
+        <input id="f-open" type="date">
+      </div>
+      <div class="field">
+        <label for="f-buy">Buy price</label>
+        <input id="f-buy" type="number" inputmode="decimal" step="any" min="0" placeholder="0.00">
+      </div>
+      <div class="field">
+        <label for="f-close">End date</label>
+        <input id="f-close" type="date">
+      </div>
+      <div class="field">
+        <label for="f-sell">Sell price</label>
+        <input id="f-sell" type="number" inputmode="decimal" step="any" min="0" placeholder="Still open">
+      </div>
+      <p class="help field full">Leave End date and Sell price empty while the trade is still open. You can end it later with the End trade button.</p>
+    </div>
+    <div class="preview num" id="f-preview"><span>Change —</span><span>P&amp;L —</span></div>
+    <p class="err" id="f-err" role="alert"></p>
+    <div class="actions">
+      <button class="btn danger" type="button" id="f-delete" hidden>Delete</button>
+      <span class="spacer"></span>
+      <button class="btn" type="button" id="f-cancel">Cancel</button>
+      <button class="btn primary" type="submit" id="f-save">Save trade</button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- Dates (all in UTC to avoid time-zone drift) ----------
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function parseD(s) { const [y, m, d] = s.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); }
+  function fmtD(dt) { return dt.toISOString().slice(0, 10); }
+  function addDays(dt, n) { return new Date(dt.getTime() + n * 86400000); }
+  function mondayOf(s) { const dt = parseD(s); return fmtD(addDays(dt, -((dt.getUTCDay() + 6) % 7))); }
+  function weekYear(monStr) { return addDays(parseD(monStr), 3).getUTCFullYear(); }
+  function localToday() {
+    const n = new Date();
+    return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0");
+  }
+  function shortDate(s) { const d = parseD(s); return MONTHS[d.getUTCMonth()] + " " + d.getUTCDate(); }
+  function rangeLabel(monStr) {
+    const a = parseD(monStr), b = addDays(a, 6);
+    const left = MONTHS[a.getUTCMonth()] + " " + a.getUTCDate();
+    const right = (b.getUTCMonth() === a.getUTCMonth() ? "" : MONTHS[b.getUTCMonth()] + " ") + b.getUTCDate();
+    return left + " – " + right + ", " + b.getUTCFullYear();
+  }
+  // Weeks (Mon–Sun) belong to the year of their Thursday (ISO rule).
+  // Inside the year, a week sits in the month of its Monday (or January if that Monday falls in late December).
+  function weeksOfYear(Y) {
+    const jan4 = new Date(Date.UTC(Y, 0, 4));
+    let mon = addDays(jan4, -((jan4.getUTCDay() + 6) % 7));
+    const months = Array.from({ length: 12 }, () => []);
+    while (addDays(mon, 3).getUTCFullYear() === Y) {
+      const month = mon.getUTCFullYear() < Y ? 0 : mon.getUTCMonth();
+      months[month].push(fmtD(mon));
+      mon = addDays(mon, 7);
+    }
+    return months;
+  }
+
+  // ---------- Money ----------
+  const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const price = new Intl.NumberFormat("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  function money(n) { return usd.format(n); }
+  function signedMoney(n) { return (n > 0 ? "+" : n < 0 ? "−" : "") + usd.format(Math.abs(n)); }
+  function signedPct(p, digits) {
+    if (p == null || !isFinite(p)) return "—";
+    const d = digits == null ? 1 : digits;
+    const v = Math.abs(p).toFixed(d);
+    return (p > 0.00001 ? "+" : p < -0.00001 ? "−" : "") + v + "%";
+  }
+  function compactMoney(n) {
+    const a = Math.abs(n);
+    const s = a >= 10000 ? (a / 1000).toFixed(0) + "k" : a >= 1000 ? (a / 1000).toFixed(1) + "k" : a.toFixed(0);
+    return (n > 0 ? "+$" : n < 0 ? "−$" : "$") + s;
+  }
+  function cls(n) { return n > 0 ? "gain" : n < 0 ? "loss" : ""; }
+  function pnl(t) { return t.sell == null ? null : (t.sell - t.buy) * t.shares; }
+  function pct(t) { return t.sell == null || !t.buy ? null : (t.sell - t.buy) / t.buy * 100; }
+
+  // ---------- Example data (shown only until you start your own tracker) ----------
+  const DEMO_INITIAL = 10000;
+  const DEMO = [
+    ["2025-09-08","AAPL",228.50,236.10,10],["2025-10-14","NVDA",180.20,172.40,8],["2025-11-18","MSFT",495.00,507.30,4],
+    ["2025-12-09","AMD",215.40,221.80,10],["2026-01-07","SPY",690.10,694.80,5],["2026-01-21","TSLA",430.00,412.50,6],
+    ["2026-02-04","AMZN",238.20,246.90,10],["2026-02-18","GOOGL",310.00,318.40,8],["2026-03-11","NVDA",188.00,179.30,12],
+    ["2026-03-25","META",640.00,662.10,4],["2026-04-08","AAPL",245.00,253.60,10],["2026-04-09","MSFT",525.00,519.00,4],
+    ["2026-04-29","PLTR",160.00,148.20,15],["2026-05-13","QQQ",610.00,621.50,4],["2026-06-03","MSFT",520.00,536.80,5],
+    ["2026-06-24","AMD",240.00,233.10,10],["2026-07-15","COST",980.00,1004.50,2],["2026-08-05","NVDA",195.00,207.60,12],
+    ["2026-08-26","TSLA",410.00,398.00,5],["2026-09-16","AMZN",250.00,261.20,10],["2026-10-07","GOOGL",330.00,341.50,6],
+    ["2026-10-21","AAPL",260.00,254.40,10],["2026-11-04","META",670.00,688.00,3],["2026-11-05","SPY",700.00,705.40,5],
+    ["2026-11-10","NVDA",205.00,null,10]
+  ].map((r, i) => {
+    const held = [3,6,8,2,1,5,4,7,2,9,6,1,3,8,2,5,4,7,6,3,8,2,5,1,3][i];
+    const closed = r[3] != null;
+    return {
+      id: "ex" + i, symbol: r[1], buy: r[2], sell: r[3], shares: r[4],
+      openDate: closed ? fmtD(addDays(parseD(r[0]), -held)) : r[0],
+      closeDate: closed ? r[0] : null
+    };
+  });
+  // A trade lands in the week it closed; a still-open trade sits in the week it opened.
+  function tradeDay(t) { return t.closeDate || t.openDate; }
+  function heldDays(t) { return t.closeDate && t.openDate ? Math.round((parseD(t.closeDate) - parseD(t.openDate)) / 86400000) : null; }
+
+  // ---------- State ----------
+  const TODAY = localToday();
+  const THIS_WEEK = mondayOf(TODAY);
+  const S = {
+    phase: "loading",      // loading | ready
+    store: null,           // "db" | "local"
+    demo: false,
+    readOnly: false,
+    privateNote: false,
+    stale: false,
+    initial: 0,
+    trades: [],
+    year: weekYear(THIS_WEEK),
+    week: null,
+    gotSettings: false,
+    gotTrades: false,
+    hasSettings: false,
+    startDate: null,       // Monday of the week tracking starts
+  };
+  let db = null;
+  const NEXT_WEEK = fmtD(addDays(parseD(THIS_WEEK), 7));
+  const YEARS_AHEAD = 5;
+  // Tracking starts at the chosen week (default: next week), or earlier if a trade predates it.
+  function trackStart(trades) {
+    let s = S.demo ? null : (S.startDate || NEXT_WEEK);
+    for (const t of trades) {
+      const d = t.openDate || t.closeDate;
+      if (d) { const m = mondayOf(d); if (!s || m < s) s = m; }
+    }
+    return s || NEXT_WEEK;
+  }
+
+  // ---------- Derived numbers ----------
+  function compute() {
+    const initial = S.demo ? DEMO_INITIAL : S.initial;
+    const trades = S.demo ? DEMO : S.trades;
+    const byWeek = new Map();
+    for (const t of trades) {
+      if (!tradeDay(t)) continue;
+      const k = mondayOf(tradeDay(t));
+      let w = byWeek.get(k);
+      if (!w) { w = { pnl: 0, closed: 0, open: 0, trades: [], start: 0 }; byWeek.set(k, w); }
+      w.trades.push(t);
+      const p = pnl(t);
+      if (p == null) w.open++; else { w.pnl += p; w.closed++; }
+    }
+    const keys = [...byWeek.keys()].sort();
+    let run = initial;
+    const years = new Map();
+    for (const k of keys) {
+      const w = byWeek.get(k);
+      w.start = run;
+      w.pct = run > 0 ? (w.pnl / run) * 100 : null;
+      const y = weekYear(k);
+      if (!years.has(y)) years.set(y, { start: run, pnl: 0, trades: 0 });
+      const yr = years.get(y);
+      yr.pnl += w.pnl;
+      yr.trades += w.trades.length;
+      run += w.pnl;
+    }
+    const thisYear = weekYear(THIS_WEEK);
+    const start = trackStart(trades);
+    // Year tabs run from the start year to five years past it (or past this year, whichever is later).
+    let minY = weekYear(start), maxY = Math.max(minY, thisYear) + YEARS_AHEAD;
+    for (const y of years.keys()) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+    // Years with no trades start from the balance carried in from earlier years.
+    let carry = initial;
+    const yearList = [];
+    for (let y = minY; y <= maxY; y++) {
+      const yr = years.get(y) || { start: carry, pnl: 0, trades: 0 };
+      yr.pct = yr.start > 0 ? (yr.pnl / yr.start) * 100 : null;
+      carry = yr.start + yr.pnl;
+      years.set(y, yr);
+      yearList.push(y);
+    }
+    return { initial, trades, byWeek, balance: run, years, yearList, start };
+  }
+
+  // ---------- Rendering ----------
+  const $ = (id) => document.getElementById(id);
+  function el(tag, attrs, kids) {
+    const n = document.createElement(tag);
+    if (attrs) for (const k in attrs) {
+      const v = attrs[k];
+      if (v == null || v === false) continue;
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k === "style") n.setAttribute("style", v);
+      else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? "" : v);
+    }
+    if (kids) for (const c of [].concat(kids)) if (c != null) n.append(c);
+    return n;
+  }
+
+  function pickDefaultWeek(C, year) {
+    const inYear = [...C.byWeek.keys()].filter((k) => weekYear(k) === year).sort();
+    let k;
+    if (year === weekYear(THIS_WEEK)) {
+      if (C.byWeek.has(THIS_WEEK)) k = THIS_WEEK;
+      else {
+        const past = inYear.filter((x) => x <= THIS_WEEK);
+        k = past.length ? past[past.length - 1] : THIS_WEEK;
+      }
+    } else if (inYear.length) k = inYear[inYear.length - 1];
+    else k = weeksOfYear(year)[0][0];
+    return k < C.start ? C.start : k;
+  }
+
+  let lastScrolledYear = null;
+  function render() {
+    const C = compute();
+    document.body.classList.toggle("loading", S.phase === "loading");
+    const thisYear = weekYear(THIS_WEEK);
+    if (!C.yearList.includes(S.year)) S.year = C.yearList.includes(thisYear) ? thisYear : C.yearList[0];
+    if (!S.week || weekYear(S.week) !== S.year || S.week < C.start) S.week = pickDefaultWeek(C, S.year);
+
+    // Stats
+    const ini = $("initial");
+    if (document.activeElement !== ini) ini.value = S.phase === "loading" ? "" : String(+C.initial.toFixed(2));
+    ini.readOnly = S.demo || S.readOnly || S.phase === "loading";
+    $("initial-hint").textContent = S.demo ? "Example amount" : (S.readOnly ? "Read only" : "");
+    const sdi = $("start-date");
+    if (document.activeElement !== sdi) sdi.value = C.start;
+    sdi.readOnly = S.demo || S.readOnly || S.phase === "loading";
+    if (S.phase === "loading") {
+      $("balance").textContent = "—";
+      $("total-change").innerHTML = "&nbsp;";
+    } else {
+      $("balance").textContent = money(C.balance);
+      const diff = C.balance - C.initial;
+      const tc = $("total-change");
+      tc.className = "sub num " + cls(diff);
+      tc.textContent = signedMoney(diff) + "  ·  " + (C.initial > 0 ? signedPct(diff / C.initial * 100, 2) : "—");
+    }
+
+    renderBanner();
+
+    // Years
+    const ys = $("years");
+    ys.replaceChildren(...C.yearList.map((y) => {
+      const yr = C.years.get(y);
+      return el("button", {
+        class: "year", type: "button", "aria-pressed": String(y === S.year),
+        onclick: () => { S.year = y; S.week = null; render(); }
+      }, [
+        el("b", { text: String(y) }),
+        el("small", { class: cls(yr.pnl), text: S.phase === "loading" ? "—" : (yr.trades ? signedPct(yr.pct) : "no trades") })
+      ]);
+    }));
+
+    if (lastScrolledYear !== S.year) {
+      lastScrolledYear = S.year;
+      const sel = ys.querySelector('[aria-pressed="true"]');
+      if (sel) {
+        const a = sel.getBoundingClientRect(), r = ys.getBoundingClientRect();
+        if (a.right > r.right || a.left < r.left) ys.scrollLeft += a.left - r.left - 8;
+      }
+    }
+
+    // Board
+    $("board-title").textContent = String(S.year);
+    const yr = C.years.get(S.year);
+    const ysum = $("year-sum");
+    if (S.phase === "loading" || !yr) { ysum.textContent = ""; }
+    else {
+      ysum.replaceChildren(
+        el("span", { class: cls(yr.pnl), text: signedMoney(yr.pnl) + " (" + signedPct(yr.pct) + ")" }),
+        document.createTextNode("  ·  " + yr.trades + (yr.trades === 1 ? " trade" : " trades"))
+      );
+    }
+    const months = weeksOfYear(S.year);
+    const box = $("months");
+    // Months that end before tracking starts are left out; earlier weeks in the start month stay blank.
+    const rows = [];
+    months.forEach((weeks, mi) => {
+      if (!weeks.length || weeks[weeks.length - 1] < C.start) return;
+      const cells = [el("div", { class: "m", text: MONTHS[mi] })];
+      for (let i = 0; i < 5; i++) {
+        const k = weeks[i];
+        if (!k || k < C.start) { cells.push(el("div", { class: "wk blank", "aria-hidden": "true" })); continue; }
+        cells.push(weekBox(C, k));
+      }
+      rows.push(el("div", { class: "month" }, cells));
+    });
+    box.replaceChildren(...rows);
+
+    renderWeek(C);
+    lastC = C;
+    renderChart(C);
+  }
+
+  // ---------- Balance chart ----------
+  let chartRange = "year";   // "year" | "all"
+  let lastC = null;
+  let lastW = 0;
+  const SVGNS = "http://www.w3.org/2000/svg";
+  function sv(tag, attrs, kids) {
+    const n = document.createElementNS(SVGNS, tag);
+    if (attrs) for (const k in attrs) if (attrs[k] != null) n.setAttribute(k, attrs[k]);
+    if (kids) for (const c of [].concat(kids)) if (c != null) n.append(c);
+    return n;
+  }
+  function niceTicks(lo, hi, n) {
+    const raw = (hi - lo) / n;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const f = raw / mag;
+    const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+    const out = [];
+    for (let v = Math.floor(lo / step) * step; v <= Math.ceil(hi / step) * step + step / 2; v += step) out.push(+v.toFixed(6));
+    return out;
+  }
+  function axisMoney(v) {
+    const a = Math.abs(v);
+    if (a >= 1e6) return "$" + (v / 1e6).toFixed(a >= 1e7 ? 1 : 2) + "M";
+    return "$" + Math.round(v).toLocaleString("en-US");
+  }
+  function longDate(s) {
+    const d = parseD(s);
+    return MONTHS[d.getUTCMonth()] + " " + d.getUTCDate() + ", " + d.getUTCFullYear();
+  }
+
+  function chartData(C) {
+    const closes = C.trades
+      .filter((t) => t.sell != null && t.closeDate)
+      .map((t) => ({ d: t.closeDate, p: pnl(t) }))
+      .sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+    // The line runs from the tracking start to today, or further if trades are already dated later than today.
+    const lastClose = closes.length ? closes[closes.length - 1].d : null;
+    const horizon = lastClose && lastClose > TODAY ? lastClose : TODAY;
+    let start, end;
+    if (chartRange === "year") {
+      start = S.year + "-01-01";
+      end = S.year + "-12-31";
+      if (C.start > start) start = C.start;
+      if (end > horizon) end = horizon;
+    } else {
+      start = C.start;
+      end = horizon;
+    }
+    if (start > end) return null;   // tracking (or that year) hasn't begun yet
+    if (start === end) end = fmtD(addDays(parseD(start), 1));
+    let bal = C.initial;
+    for (const e of closes) if (e.d < start) bal += e.p;
+    const startBal = bal;
+    const pts = [{ d: start, b: bal }];
+    const events = [];
+    for (const e of closes) {
+      if (e.d >= start && e.d <= end) { bal += e.p; pts.push({ d: e.d, b: bal }); events.push({ d: e.d, b: bal, p: e.p }); }
+    }
+    pts.push({ d: end, b: bal });
+    const balanceAt = (day) => { let b = C.initial; for (const e of closes) { if (e.d <= day) b += e.p; else break; } return b; };
+    return { start, end, startBal, endBal: bal, pts, events, balanceAt };
+  }
+
+  function setReadout(cd, day) {
+    const r = $("readout");
+    if (S.phase === "loading") { r.textContent = "Loading…"; return; }
+    const b = cd.balanceAt(day);
+    const diff = cd.endBal - cd.startBal;
+    const pctv = cd.startBal > 0 ? diff / cd.startBal * 100 : null;
+    r.replaceChildren(
+      el("b", { text: money(b) }),
+      document.createTextNode(day === TODAY ? "Today" : longDate(day)),
+      el("span", { class: "rc " + cls(diff), text: signedMoney(diff) + (pctv != null ? " (" + signedPct(pctv, 2) + ")" : "") + " since " + longDate(cd.start) })
+    );
+  }
+
+  function renderChart(C) {
+    $("rng-year").textContent = String(S.year);
+    $("rng-year").setAttribute("aria-pressed", String(chartRange === "year"));
+    $("rng-all").setAttribute("aria-pressed", String(chartRange === "all"));
+    const host = $("chart");
+    const W = Math.max(260, Math.round(host.clientWidth || 340));
+    lastW = W;
+    const H = W < 520 ? 190 : 240;
+    if (S.phase === "loading") { host.replaceChildren(); setReadout(null); return; }
+    const cd = chartData(C);
+    if (!cd) {
+      const notYet = C.start > TODAY && (chartRange === "all" || weekYear(C.start) >= S.year);
+      host.replaceChildren(el("p", { class: "chart-empty", text: notYet
+        ? "Tracking starts the week of " + longDate(C.start) + ". Your balance line will appear here from then."
+        : S.year + " hasn't started yet. Trades you add for " + S.year + " will show here." }));
+      $("readout").replaceChildren(el("b", { text: money(C.balance) }), document.createTextNode("Today"));
+      return;
+    }
+
+    let lo = Math.min(cd.startBal, ...cd.pts.map((p) => p.b));
+    let hi = Math.max(cd.startBal, ...cd.pts.map((p) => p.b));
+    if (hi - lo < 1) { const m = Math.max(Math.abs(hi) * 0.01, 10); lo -= m; hi += m; }
+    const padv = (hi - lo) * 0.08;
+    const yt = niceTicks(lo - padv, hi + padv, 4);
+    lo = yt[0]; hi = yt[yt.length - 1];
+    const labels = yt.map(axisMoney);
+    const pad = { l: Math.max(...labels.map((s) => s.length)) * 6.3 + 10, r: 14, t: 10, b: 24 };
+    const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+    const t0 = parseD(cd.start).getTime(), t1 = parseD(cd.end).getTime();
+    const x = (d) => pad.l + ((parseD(d).getTime() - t0) / (t1 - t0)) * pw;
+    const y = (b) => pad.t + ((hi - b) / (hi - lo)) * ph;
+
+    const g = [];
+    // Horizontal grid + y labels
+    yt.forEach((v, i) => {
+      g.push(sv("line", { class: "grid", x1: pad.l, x2: W - pad.r, y1: y(v), y2: y(v) }));
+      g.push(sv("text", { x: pad.l - 6, y: y(v) + 3.5, "text-anchor": "end" }, document.createTextNode(labels[i])));
+    });
+    // X ticks: month starts for long ranges, Mondays for short ones
+    const spanDays = (t1 - t0) / 86400000;
+    const xt = [];
+    if (spanDays > 75) {
+      const s = parseD(cd.start);
+      let d = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + 1, 1));
+      const multiYear = parseD(cd.start).getUTCFullYear() !== parseD(cd.end).getUTCFullYear();
+      while (d.getTime() <= t1) {
+        const m = d.getUTCMonth();
+        xt.push({ d: fmtD(d), label: MONTHS[m] + (multiYear && m === 0 ? " '" + String(d.getUTCFullYear()).slice(2) : "") });
+        d = new Date(Date.UTC(d.getUTCFullYear(), m + 1, 1));
+      }
+    } else if (spanDays > 10) {
+      let d = parseD(mondayOf(cd.start));
+      if (d.getTime() < t0) d = addDays(d, 7);
+      while (d.getTime() <= t1) { xt.push({ d: fmtD(d), label: shortDate(fmtD(d)) }); d = addDays(d, 7); }
+    } else {
+      for (let d = parseD(cd.start); d.getTime() <= t1; d = addDays(d, 1)) xt.push({ d: fmtD(d), label: shortDate(fmtD(d)) });
+    }
+    const maxT = Math.max(2, Math.floor(pw / (spanDays > 75 ? 34 : 52)));
+    const stride = Math.ceil(xt.length / maxT);
+    xt.forEach((tk, i) => {
+      if (i % stride) return;
+      const xx = x(tk.d);
+      if (xx > W - pad.r - 8) return;
+      g.push(sv("line", { class: "grid", x1: xx, x2: xx, y1: H - pad.b, y2: H - pad.b + 4 }));
+      g.push(sv("text", { x: xx, y: H - 7, "text-anchor": "middle" }, document.createTextNode(tk.label)));
+    });
+    // Starting-balance reference
+    g.push(sv("line", { class: "base", x1: pad.l, x2: W - pad.r, y1: y(cd.startBal), y2: y(cd.startBal) }));
+    // Step line + area
+    let dPath = "M" + x(cd.pts[0].d).toFixed(1) + "," + y(cd.pts[0].b).toFixed(1);
+    for (let i = 1; i < cd.pts.length; i++) dPath += " H" + x(cd.pts[i].d).toFixed(1) + " V" + y(cd.pts[i].b).toFixed(1);
+    const area = dPath + " V" + (H - pad.b) + " H" + pad.l + " Z";
+    const gid = "bal-grad";
+    g.unshift(sv("defs", null, sv("linearGradient", { id: gid, x1: "0", y1: "0", x2: "0", y2: "1" }, [
+      sv("stop", { offset: "0", class: "area-top" }), sv("stop", { offset: "1", class: "area-bot" })
+    ])));
+    g.push(sv("path", { d: area, fill: "url(#" + gid + ")", stroke: "none" }));
+    g.push(sv("path", { class: "line", d: dPath }));
+    // Each closed trade as a dot at its step
+    if (cd.events.length <= 400) cd.events.forEach((e) => g.push(sv("circle", { class: e.p >= 0 ? "ev-up" : "ev-down", cx: x(e.d), cy: y(e.b), r: 2.6 })));
+    // Endpoint
+    g.push(sv("circle", { class: "end", cx: x(cd.end), cy: y(cd.endBal), r: 4.5 }));
+    // Hover / touch cursor
+    const cursor = sv("line", { class: "cursor", y1: pad.t, y2: H - pad.b, x1: -10, x2: -10, visibility: "hidden" });
+    const cdot = sv("circle", { class: "cdot", r: 4, cx: -10, cy: -10, visibility: "hidden" });
+    g.push(cursor, cdot);
+    const hit = sv("rect", { x: pad.l, y: 0, width: pw, height: H, fill: "transparent" });
+    g.push(hit);
+
+    const svg = sv("svg", { viewBox: "0 0 " + W + " " + H, width: W, height: H, role: "img",
+      "aria-label": "Balance from " + longDate(cd.start) + " (" + money(cd.startBal) + ") to " + (cd.end === TODAY ? "today" : longDate(cd.end)) + " (" + money(cd.endBal) + ")" }, g);
+    const show = (evt) => {
+      const r = svg.getBoundingClientRect();
+      const px = ((evt.clientX - r.left) / r.width) * W;
+      const frac = Math.min(1, Math.max(0, (px - pad.l) / pw));
+      const day = fmtD(addDays(parseD(cd.start), Math.round(frac * spanDays)));
+      const b = cd.balanceAt(day);
+      const xx = x(day);
+      cursor.setAttribute("x1", xx); cursor.setAttribute("x2", xx); cursor.setAttribute("visibility", "visible");
+      cdot.setAttribute("cx", xx); cdot.setAttribute("cy", y(b)); cdot.setAttribute("visibility", "visible");
+      setReadout(cd, day);
+    };
+    const hide = () => { cursor.setAttribute("visibility", "hidden"); cdot.setAttribute("visibility", "hidden"); setReadout(cd, cd.end); };
+    svg.addEventListener("pointermove", show);
+    svg.addEventListener("pointerdown", show);
+    svg.addEventListener("pointerleave", hide);
+    svg.addEventListener("pointercancel", hide);
+    host.replaceChildren(svg);
+    setReadout(cd, cd.end);
+  }
+  $("rng-year").addEventListener("click", () => { chartRange = "year"; render(); });
+  $("rng-all").addEventListener("click", () => { chartRange = "all"; render(); });
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(() => {
+      const w = Math.round($("chart").clientWidth);
+      if (lastC && Math.abs(w - lastW) > 2) renderChart(lastC);
+    }).observe($("chart"));
+  }
+
+  function weekBox(C, k) {
+    const w = C.byWeek.get(k);
+    const future = k > THIS_WEEK && !w;
+    const classes = ["wk"];
+    let label = "", style = null, inner = null;
+    if (S.phase !== "loading" && w) {
+      if (w.closed) {
+        const mag = w.pct != null ? Math.abs(w.pct) : Math.min(Math.abs(w.pnl) / 50, 5);
+        const t = Math.round(14 + Math.min(mag / 3, 1) * 46);
+        classes.push(w.pnl > 0 ? "up" : w.pnl < 0 ? "down" : "flat");
+        style = "--t:" + t + "%";
+        inner = w.pct != null ? signedPct(w.pct) : compactMoney(w.pnl);
+      } else {
+        classes.push("flat");
+        inner = el("span", { class: "dot", "aria-hidden": "true" });
+      }
+      label = (w.closed ? (w.pct != null ? signedPct(w.pct) : signedMoney(w.pnl)) + ", " : "") +
+        w.trades.length + (w.trades.length === 1 ? " trade" : " trades") + (w.open ? ", " + w.open + " open" : "");
+    } else {
+      label = future ? "upcoming" : "no trades";
+      if (k === C.start && S.phase !== "loading") { inner = el("span", { class: "st", text: "Start" }); label += ", tracking starts"; }
+    }
+    if (future) classes.push("future");
+    if (k === THIS_WEEK) classes.push("now");
+    const day = parseD(k).getUTCDate();
+    return el("button", {
+      class: classes.join(" "), type: "button", style,
+      "aria-pressed": String(k === S.week),
+      "aria-label": "Week of " + rangeLabel(k) + ": " + label + (k === THIS_WEEK ? " (this week)" : ""),
+      title: rangeLabel(k),
+      onclick: () => { S.week = k; render(); }
+    }, [el("span", { class: "d", text: String(day) }), inner]);
+  }
+
+  function renderWeek(C) {
+    const sec = $("week");
+    const k = S.week;
+    const w = C.byWeek.get(k);
+    const head = el("div", { class: "week-head" }, [
+      el("div", null, [
+        el("h2", { text: "Week of " + rangeLabel(k) }),
+        el("div", { class: "wsum num" }, w && S.phase !== "loading" ? (w.closed ? [
+          el("span", { class: cls(w.pnl), text: signedMoney(w.pnl) + (w.pct != null ? " (" + signedPct(w.pct, 2) + ")" : "") }),
+          document.createTextNode("  ·  " + w.trades.length + (w.trades.length === 1 ? " trade" : " trades") + (w.open ? ", " + w.open + " open" : ""))
+        ] : [document.createTextNode(w.open + (w.open === 1 ? " open trade" : " open trades"))]) : [document.createTextNode(S.phase === "loading" ? "Loading…" : "No trades")])
+      ]),
+      S.readOnly ? null : el("button", { class: "btn", type: "button", onclick: () => openForm(null) }, "+ Trade")
+    ]);
+    if (!w || S.phase === "loading") {
+      sec.replaceChildren(head, el("div", { class: "empty" }, [
+        el("p", { text: S.phase === "loading" ? "Loading your trades…" : "No trades this week." })
+      ]));
+      return;
+    }
+    const rows = w.trades.slice().sort((a, b) => tradeDay(a) < tradeDay(b) ? -1 : tradeDay(a) > tradeDay(b) ? 1 : a.symbol.localeCompare(b.symbol)).map((t) => {
+      const p = pnl(t), c = pct(t), h = heldDays(t);
+      const ro = S.readOnly || S.demo;
+      return el("tr", {
+        class: ro ? "ro" : null,
+        tabindex: ro ? null : "0",
+        onclick: ro ? null : () => openForm(t),
+        onkeydown: ro ? null : (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openForm(t); } }
+      }, [
+        el("td", { class: "sym", text: t.symbol }),
+        el("td", { class: "num wide" }, [document.createTextNode(shortDate(t.openDate)), t.closeDate ? null : el("span", { class: "sm", text: "still open" })]),
+        el("td", { class: "num wide" }, t.closeDate ? [
+          document.createTextNode(shortDate(t.closeDate)),
+          el("span", { class: "sm", text: h === 0 ? "same day" : h + (h === 1 ? " day" : " days") })
+        ] : document.createTextNode("—")),
+        el("td", { class: "num narrow" }, [
+          el("span", { class: "dl", text: shortDate(t.openDate) }),
+          el("span", { class: "dl", text: t.closeDate ? shortDate(t.closeDate) : "open" })
+        ]),
+        el("td", { class: "r num" }, [document.createTextNode(price.format(t.buy)), el("span", { class: "sm", text: "× " + (+t.shares).toLocaleString("en-US") })]),
+        el("td", { class: "r num" }, t.sell == null ? (ro ? el("span", { class: "tag", text: "Open" }) : el("button", { class: "endbtn", type: "button", "aria-label": "End " + t.symbol + " trade",
+          onclick: (e) => { e.stopPropagation(); openForm(t, "end"); }, onkeydown: (e) => e.stopPropagation() }, "End trade")) : document.createTextNode(price.format(t.sell))),
+        el("td", { class: "r num " + (p == null ? "" : cls(p)) }, p == null ? document.createTextNode("—") : [
+          document.createTextNode(signedPct(c, 2)),
+          el("span", { class: "sm", text: signedMoney(p) })
+        ])
+      ]);
+    });
+    const table = el("table", null, [
+      el("thead", null, el("tr", null, [
+        el("th", { text: "Symbol" }), el("th", { class: "wide", text: "Open date" }), el("th", { class: "wide", text: "End date" }),
+        el("th", { class: "narrow" }, [el("span", { class: "dl", text: "Open date" }), el("span", { class: "dl", text: "End date" })]),
+        el("th", { class: "r", text: "Buy" }), el("th", { class: "r", text: "Sell" }), el("th", { class: "r", text: "Change %" })
+      ])),
+      el("tbody", null, rows)
+    ]);
+    sec.replaceChildren(head, el("div", { class: "table-wrap" }, table));
+  }
+
+  function renderBanner() {
+    const b = $("banner");
+    if (S.phase === "loading") {
+      b.replaceChildren(el("div", { class: "banner quiet", text: S.stale ? "Can't reach your saved trades yet. They'll appear when the connection comes back." : "Loading your trades…" }));
+      return;
+    }
+    if (S.demo) {
+      const input = el("input", { id: "start-amt", type: "number", inputmode: "decimal", min: "0", step: "0.01", placeholder: "10000", "aria-label": "Your initial investment in dollars" });
+      const week = el("input", { id: "start-week", type: "date", value: NEXT_WEEK });
+      const start = () => {
+        const v = parseFloat(input.value);
+        if (!(v >= 0) || input.value === "") { toast("Enter your initial investment first."); input.focus(); return; }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(week.value)) { toast("Pick the week you start trading."); week.focus(); return; }
+        startTracker(v, mondayOf(week.value));
+      };
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") start(); });
+      b.replaceChildren(el("div", { class: "banner", id: "demo-banner" }, [
+        el("p", null, [el("strong", { text: "These are example trades. " }), document.createTextNode("Enter your starting amount and the week you start trading to begin your own tracker; the examples disappear.")]),
+        el("div", { class: "row" }, [el("span", { class: "num", text: "$" }), input]),
+        el("div", { class: "row" }, [el("label", { class: "inline", for: "start-week", text: "Starting week" }), week]),
+        el("div", { class: "row" }, [el("button", { class: "btn primary", type: "button", onclick: start }, "Start my tracker")])
+      ]));
+      return;
+    }
+    const notes = [];
+    if (S.readOnly) notes.push(S.privateNote ? "This tracker is private to its owner." : "You can view this tracker but not change it.");
+    if (S.stale) notes.push("Showing saved data; it may be out of date until the connection comes back.");
+    b.replaceChildren(...(notes.length ? [el("div", { class: "banner quiet", text: notes.join(" ") })] : []));
+  }
+
+  // ---------- Toast ----------
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3200);
+  }
+
+  // ---------- Form ----------
+  let editing = null;
+  let deleteArmed = false;
+  let formMode = "new";
+  function openForm(t, mode) {
+    if (S.readOnly) return;
+    if (S.demo) {
+      const banner = $("demo-banner");
+      if (banner) { banner.classList.remove("flash"); void banner.offsetWidth; banner.classList.add("flash"); }
+      const amt = $("start-amt"); if (amt) amt.focus();
+      toast("Start your tracker first, then add trades.");
+      return;
+    }
+    editing = t;
+    formMode = t ? (mode === "end" ? "end" : "edit") : "new";
+    deleteArmed = false;
+    $("form-title").textContent = formMode === "end" ? "End " + t.symbol + " trade" : t ? "Edit trade" : "New trade";
+    $("f-symbol").value = t ? t.symbol : "";
+    let d = TODAY;
+    if (!t && S.week && S.week !== THIS_WEEK) d = S.week;
+    $("f-open").value = t ? t.openDate : d;
+    $("f-close").value = t && t.closeDate ? t.closeDate : (formMode === "end" ? (t.openDate > TODAY ? t.openDate : TODAY) : "");
+    $("f-buy").value = t ? t.buy : "";
+    $("f-sell").value = t && t.sell != null ? t.sell : "";
+    $("f-shares").value = t ? t.shares : "";
+    $("f-delete").hidden = !t;
+    $("f-delete").textContent = "Delete";
+    $("f-err").textContent = "";
+    document.querySelectorAll(".field.bad").forEach((f) => f.classList.remove("bad"));
+    updatePreview();
+    $("scrim").hidden = false;
+    setTimeout(() => $(t ? "f-sell" : "f-symbol").focus(), 30);
+  }
+  function closeForm() { $("scrim").hidden = true; editing = null; }
+
+  function readForm() {
+    const num = (id) => { const v = $(id).value.trim(); return v === "" ? null : parseFloat(v); };
+    return {
+      symbol: $("f-symbol").value.trim().toUpperCase(),
+      openDate: $("f-open").value,
+      closeDate: $("f-close").value || null,
+      buy: num("f-buy"),
+      sell: num("f-sell"),
+      shares: num("f-shares"),
+    };
+  }
+  function updatePreview() {
+    const f = readForm();
+    const pv = $("f-preview");
+    const h = f.openDate && f.closeDate && f.closeDate >= f.openDate ? heldDays(f) : null;
+    if (f.buy > 0 && f.sell != null && f.sell >= 0) {
+      const c = (f.sell - f.buy) / f.buy * 100;
+      const p = f.shares > 0 ? (f.sell - f.buy) * f.shares : null;
+      pv.replaceChildren(
+        el("span", { class: cls(c), text: "Change " + signedPct(c, 2) }),
+        h == null ? null : el("span", { text: "Held " + (h === 0 ? "same day" : h + (h === 1 ? " day" : " days")) }),
+        el("span", { class: p == null ? "" : cls(p), text: "P&L " + (p == null ? "—" : signedMoney(p)) })
+      );
+    } else if (f.buy > 0 && f.shares > 0) {
+      pv.replaceChildren(el("span", { text: "Open position" }), el("span", { text: "Cost " + money(f.buy * f.shares) }));
+    } else {
+      pv.replaceChildren(el("span", { text: "Change —" }), el("span", { text: "P&L —" }));
+    }
+  }
+  ["f-buy", "f-sell", "f-shares", "f-open", "f-close"].forEach((id) => $(id).addEventListener("input", updatePreview));
+  // Typing a sell price on an open trade fills End date with today (still editable).
+  $("f-sell").addEventListener("change", () => {
+    if ($("f-sell").value.trim() !== "" && !$("f-close").value) {
+      const o = $("f-open").value;
+      $("f-close").value = o && o > TODAY ? o : TODAY;
+      updatePreview();
+    }
+  });
+
+  $("form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = readForm();
+    const bad = [];
+    if (!f.symbol) bad.push(["f-symbol", "Enter a symbol."]);
+    if (!(f.shares > 0)) bad.push(["f-shares", "Shares must be above 0."]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f.openDate)) bad.push(["f-open", "Pick the open date."]);
+    if (!(f.buy > 0)) bad.push(["f-buy", "Buy price must be above 0."]);
+    if (f.closeDate && f.openDate && f.closeDate < f.openDate) bad.push(["f-close", "End date can't be before the open date."]);
+    if (f.sell != null && !(f.sell >= 0)) bad.push(["f-sell", "Sell price can't be negative."]);
+    if (f.sell != null && !f.closeDate) bad.push(["f-close", "Add the end date, or clear the sell price."]);
+    if (f.closeDate && f.sell == null) bad.push(["f-sell", "Add the sell price, or clear the end date."]);
+    document.querySelectorAll(".field.bad").forEach((x) => x.classList.remove("bad"));
+    if (bad.length) {
+      bad.forEach(([id]) => $(id).closest(".field").classList.add("bad"));
+      $("f-err").textContent = bad[0][1];
+      $(bad[0][0]).focus();
+      return;
+    }
+    const id = editing ? editing.id : "t" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const trade = { id, symbol: f.symbol, openDate: f.openDate, closeDate: f.closeDate, buy: f.buy, sell: f.sell, shares: f.shares };
+    $("f-save").disabled = true;
+    try {
+      await saveTrade(trade);
+      S.year = weekYear(mondayOf(tradeDay(trade)));
+      S.week = mondayOf(tradeDay(trade));
+      const done = formMode === "end" ? "Trade ended." : formMode === "edit" ? "Trade updated." : "Trade saved.";
+      closeForm();
+      render();
+      toast(done);
+    } catch (err) {
+      $("f-err").textContent = writeError(err);
+    } finally {
+      $("f-save").disabled = false;
+    }
+  });
+  $("f-cancel").addEventListener("click", closeForm);
+  $("scrim").addEventListener("click", (e) => { if (e.target === $("scrim")) closeForm(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("scrim").hidden) closeForm(); });
+  $("f-delete").addEventListener("click", async () => {
+    if (!editing) return;
+    if (!deleteArmed) { deleteArmed = true; $("f-delete").textContent = "Tap again to delete"; return; }
+    try {
+      await deleteTrade(editing.id);
+      closeForm();
+      render();
+      toast("Trade deleted.");
+    } catch (err) {
+      $("f-err").textContent = writeError(err);
+    }
+  });
+  $("add-top").addEventListener("click", () => openForm(null));
+  $("add-fab").addEventListener("click", () => openForm(null));
+
+  // Initial investment edits
+  const ini = $("initial");
+  async function commitInitial() {
+    if (ini.readOnly) return;
+    const v = parseFloat(ini.value);
+    if (!(v >= 0)) { ini.value = String(S.initial); toast("Initial investment must be a number."); return; }
+    if (Math.abs(v - S.initial) < 0.005) return;
+    try { await saveSettings({ initial: v }); render(); toast("Initial investment updated."); }
+    catch (err) { toast(writeError(err)); ini.value = String(S.initial); }
+  }
+  ini.addEventListener("change", commitInitial);
+  ini.addEventListener("keydown", (e) => { if (e.key === "Enter") ini.blur(); });
+
+  // Start week edits
+  const sdi = $("start-date");
+  sdi.addEventListener("change", async () => {
+    if (sdi.readOnly) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(sdi.value)) { render(); return; }
+    const m = mondayOf(sdi.value);
+    if (m === (S.startDate || NEXT_WEEK) && S.startDate) { render(); return; }
+    try {
+      await saveSettings({ startDate: m });
+      S.week = null;
+      const C = compute();
+      render();
+      toast(C.start < m ? "You have trades before that week, so tracking still starts " + shortDate(C.start) + "." : "Tracking now starts the week of " + shortDate(m) + ".");
+    } catch (err) { toast(writeError(err)); render(); }
+  });
+
+  function writeError(err) {
+    const code = err && err.code;
+    if (code === "invalid_argument" || code === "not_granted") { S.readOnly = true; render(); return "You don't have permission to change this tracker."; }
+    if (code === "quota_exceeded") return "Storage is full. Delete some old trades and try again.";
+    if (code === "resource_exhausted") return "Too many changes at once. Wait a moment and try again.";
+    return "Couldn't save. Check your connection and try again.";
+  }
+
+  // ---------- Storage ----------
+  const LS_KEY = "stock-trading-tracker-v1";
+  function lsLoad() {
+    try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+  }
+  function lsSave() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ initial: S.initial, startDate: S.startDate, trades: S.trades })); } catch (e) { /* storage unavailable */ }
+  }
+  function cleanTrade(id, d) {
+    const isDay = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s.slice(0, 10));
+    if (!d || typeof d.symbol !== "string") return null;
+    const n = (x) => (typeof x === "number" && isFinite(x) ? x : null);
+    if (n(d.buy) == null || n(d.shares) == null) return null;
+    const sell = n(d.sell);
+    // Trades saved before Day open / Day close existed have a single "date".
+    const legacy = isDay(d.date) ? d.date.slice(0, 10) : null;
+    const openDate = isDay(d.openDate) ? d.openDate.slice(0, 10) : legacy;
+    let closeDate = isDay(d.closeDate) ? d.closeDate.slice(0, 10) : (sell != null ? legacy : null);
+    if (!openDate) return null;
+    if (sell != null && !closeDate) closeDate = openDate;
+    if (sell == null) closeDate = null;
+    return { id, symbol: d.symbol.slice(0, 12), openDate, closeDate, buy: n(d.buy), sell, shares: n(d.shares) };
+  }
+
+  async function saveSettings(patch) {
+    const next = Object.assign({ initial: S.initial, startDate: S.startDate || NEXT_WEEK }, patch);
+    if (S.store === "db") await db.doc("tracker/settings").set(next);
+    S.initial = next.initial; S.startDate = next.startDate; S.hasSettings = true;
+    if (S.store === "local") lsSave();
+  }
+  function validDay(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? mondayOf(s) : null; }
+  async function saveTrade(t) {
+    if (S.store === "db") {
+      const body = { symbol: t.symbol, openDate: t.openDate, closeDate: t.closeDate, buy: t.buy, sell: t.sell, shares: t.shares, updatedAt: new Date().toISOString() };
+      await db.collection("trades").doc(t.id).set(body);
+    }
+    const i = S.trades.findIndex((x) => x.id === t.id);
+    if (i >= 0) S.trades[i] = t; else S.trades.push(t);
+    if (S.store === "local") lsSave();
+  }
+  async function deleteTrade(id) {
+    if (S.store === "db") await db.collection("trades").doc(id).delete();
+    S.trades = S.trades.filter((x) => x.id !== id);
+    if (S.store === "local") lsSave();
+  }
+  async function startTracker(v, startDate) {
+    try {
+      await saveSettings({ initial: v, startDate });
+      S.demo = false;
+      S.week = null;
+      render();
+      toast("Tracker started. Add your first trade.");
+    } catch (err) { toast(writeError(err)); }
+  }
+
+  function decideDemo() {
+    if (S.gotSettings && S.gotTrades) {
+      S.phase = "ready";
+      S.demo = !S.hasSettings && S.trades.length === 0 && !S.readOnly;
+    }
+  }
+
+  function startLocal() {
+    S.store = "local";
+    const saved = lsLoad();
+    if (saved && typeof saved.initial === "number") {
+      S.initial = saved.initial;
+      S.startDate = validDay(saved.startDate);
+      S.trades = (saved.trades || []).map((t) => cleanTrade(t.id, t)).filter(Boolean);
+      S.hasSettings = true;
+    }
+    S.gotSettings = S.gotTrades = true;
+    decideDemo();
+    render();
+  }
+
+  // ---------- Backup & restore (trades live only on this phone) ----------
+  function backupData() {
+    return { app: "trade-tracker", version: 1, exportedAt: new Date().toISOString(), initial: S.initial, startDate: S.startDate, trades: S.trades };
+  }
+  async function exportBackup() {
+    if (S.demo) { toast("Start your tracker first; there's nothing of yours to back up yet."); return; }
+    const json = JSON.stringify(backupData(), null, 2);
+    const name = "trade-tracker-backup-" + TODAY + ".json";
+    try {
+      const file = new File([json], name, { type: "application/json" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: "Trade tracker backup" });
+        toast("Backup shared.");
+        return;
+      }
+    } catch (e) {
+      if (e && e.name === "AbortError") return;   // closed the share sheet
+    }
+    const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    toast("Backup saved to your Downloads.");
+  }
+  let pendingRestore = null;
+  function readBackup(file) {
+    const r = new FileReader();
+    r.onload = () => {
+      let d = null;
+      try { d = JSON.parse(r.result); } catch (e) { d = null; }
+      if (!d || d.app !== "trade-tracker" || typeof d.initial !== "number" || !Array.isArray(d.trades)) {
+        toast("That file isn't a trade tracker backup.");
+        return;
+      }
+      const trades = d.trades.map((t) => cleanTrade(t.id || ("t" + Math.random().toString(36).slice(2, 10)), t)).filter(Boolean);
+      pendingRestore = { initial: d.initial, startDate: validDay(d.startDate), trades };
+      const btn = $("restore-confirm");
+      btn.hidden = false;
+      btn.textContent = "Replace my data with this backup (" + trades.length + (trades.length === 1 ? " trade)" : " trades)");
+      $("restore-note").textContent = "Backup from " + (d.exportedAt ? longDate(d.exportedAt.slice(0, 10)) : "an unknown date") + ". This replaces everything on this phone.";
+    };
+    r.readAsText(file);
+  }
+  $("backup-btn").addEventListener("click", exportBackup);
+  $("restore-btn").addEventListener("click", () => $("restore-file").click());
+  $("restore-file").addEventListener("change", (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) readBackup(f);
+    e.target.value = "";
+  });
+  $("restore-confirm").addEventListener("click", () => {
+    if (!pendingRestore) return;
+    S.initial = pendingRestore.initial;
+    S.startDate = pendingRestore.startDate;
+    S.trades = pendingRestore.trades;
+    S.hasSettings = true;
+    S.demo = false;
+    S.week = null;
+    pendingRestore = null;
+    lsSave();
+    $("restore-confirm").hidden = true;
+    $("restore-note").textContent = "";
+    render();
+    toast("Backup restored.");
+  });
+
+  // ---------- Boot ----------
+  render();
+  startLocal();
+  // Ask the browser not to clear this app's storage when space runs low.
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* not supported */ }
+  // Offline support
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    window.addEventListener("load", () => { navigator.serviceWorker.register("./sw.js").catch(() => {}); });
+  }
+  // If the app stays open past midnight, refresh so "today" moves on.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && localToday() !== TODAY && $("scrim").hidden) location.reload();
+  });
+})();
+</script>
+</body>
+</html>
